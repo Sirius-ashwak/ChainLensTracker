@@ -97,13 +97,23 @@ const DatasetCard = ({ dataset }: DatasetCardProps) => {
             <DropdownMenuContent align="end">
               <DropdownMenuItem asChild>
                 <Link href={`/datasets/${dataset.id}`}>
-                  <a className="w-full cursor-pointer">View Details</a>
+                  <div className="w-full cursor-pointer">View Details</div>
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href={`/lineage?dataset=${dataset.id}`}>
-                  <a className="w-full cursor-pointer">View Lineage</a>
+                  <div className="w-full cursor-pointer">View Lineage</div>
                 </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <a 
+                  href={`https://gateway.lighthouse.storage/ipfs/${dataset.cid}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="w-full cursor-pointer"
+                >
+                  View on IPFS
+                </a>
               </DropdownMenuItem>
               <DropdownMenuItem>
                 Download Metadata

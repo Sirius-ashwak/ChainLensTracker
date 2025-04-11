@@ -1,17 +1,22 @@
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
-import { ArrowLeft, Database, HardDrive, FileText, Calendar, Tag, Clock, ExternalLink, Download } from "lucide-react";
+import { ArrowLeft, Database, HardDrive, FileText, Calendar, Tag, Clock, ExternalLink, Download, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import RelationshipTable from "@/components/RelationshipTable";
 import DatasetLineage from "@/components/DatasetLineage";
+import { getFilecoinDealStatus } from "@/lib/web3storage";
 
 const DatasetDetails = () => {
   const { id } = useParams();
   const datasetId = parseInt(id as string);
+  const [dealStatus, setDealStatus] = useState<any>(null);
+  const [loadingDealStatus, setLoadingDealStatus] = useState(false);
 
   const { data: dataset, isLoading } = useQuery({
     queryKey: ["/api/datasets", datasetId],
@@ -21,6 +26,23 @@ const DatasetDetails = () => {
     queryKey: ["/api/relationships/dataset", datasetId],
     enabled: !!datasetId,
   });
+  
+  useEffect(() => {
+    // Fetch Filecoin deal status when dataset is loaded
+    if (dataset?.cid) {
+      setLoadingDealStatus(true);
+      getFilecoinDealStatus(dataset.cid)
+        .then(status => {
+          setDealStatus(status);
+        })
+        .catch(error => {
+          console.error("Failed to get deal status:", error);
+        })
+        .finally(() => {
+          setLoadingDealStatus(false);
+        });
+    }
+  }, [dataset?.cid]);
 
   if (isLoading) {
     return (
@@ -182,9 +204,9 @@ const DatasetDetails = () => {
                           {dataset.cid}
                         </code>
                         <Button variant="outline" size="sm" className="ml-2" asChild>
-                          <a href={`https://ipfs.io/ipfs/${dataset.cid}`} target="_blank" rel="noopener noreferrer">
+                          <a href={`https://gateway.lighthouse.storage/ipfs/${dataset.cid}`} target="_blank" rel="noopener noreferrer">
                             <ExternalLink className="h-4 w-4 mr-1" />
-                            View on IPFS
+                            View on Lighthouse
                           </a>
                         </Button>
                       </div>
@@ -200,9 +222,9 @@ const DatasetDetails = () => {
                   </CardHeader>
                   <CardContent className="space-y-2">
                     <Button className="w-full justify-start" asChild>
-                      <a href={`https://ipfs.io/ipfs/${dataset.cid}`} target="_blank" rel="noopener noreferrer">
+                      <a href={`https://gateway.lighthouse.storage/ipfs/${dataset.cid}`} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="h-4 w-4 mr-2" />
-                        View on IPFS
+                        View on Lighthouse
                       </a>
                     </Button>
                     <Button variant="outline" className="w-full justify-start">
@@ -229,6 +251,62 @@ const DatasetDetails = () => {
                         </p>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+                
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Server className="h-4 w-4 mr-2" />
+                      Filecoin Deal Status
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {loadingDealStatus ? (
+                      <div className="animate-pulse space-y-2">
+                        <div className="h-4 bg-muted rounded w-3/4"></div>
+                        <div className="h-4 bg-muted rounded w-1/2"></div>
+                      </div>
+                    ) : dealStatus && dealStatus.data && dealStatus.data.length > 0 ? (
+                      <Accordion type="single" collapsible>
+                        <AccordionItem value="deal-info">
+                          <AccordionTrigger className="text-sm">
+                            <div className="bg-green-500/20 text-green-500 px-2 py-1 rounded-full text-xs">
+                              Active Deal
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <div className="space-y-2 text-xs">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <p className="text-muted-foreground">Deal ID:</p>
+                                  <p className="font-mono">{dealStatus.data[0].dealId}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Status:</p>
+                                  <p>{dealStatus.data[0].dealStatus}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Storage Provider:</p>
+                                  <p className="font-mono">{dealStatus.data[0].storageProvider}</p>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground">Piece Size:</p>
+                                  <p>{(dealStatus.data[0].pieceSize / (1024 * 1024 * 1024)).toFixed(2)} GB</p>
+                                </div>
+                              </div>
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">
+                        <p>No active Filecoin deals found for this CID.</p>
+                        <p className="text-xs mt-1">
+                          Filecoin deals can take up to 48 hours to be confirmed after file upload.
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>

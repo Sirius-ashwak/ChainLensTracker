@@ -323,6 +323,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to check if CID exists in IPFS/Filecoin" });
     }
   });
+  
+  // Get Filecoin deal status for a CID
+  apiRouter.get("/ipfs/deal-status/:cid", async (req, res) => {
+    try {
+      const { cid } = req.params;
+      const apiKey = process.env.LIGHTHOUSE_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ message: "Lighthouse API key not configured" });
+      }
+
+      const status = await lighthouse.dealStatus(cid);
+      res.json(status);
+    } catch (error) {
+      console.error('Failed to get deal status from Lighthouse', error);
+      res.status(500).json({ message: "Failed to get Filecoin deal status" });
+    }
+  });
 
   // Format file size helper
   function formatFileSize(bytes: number): string {

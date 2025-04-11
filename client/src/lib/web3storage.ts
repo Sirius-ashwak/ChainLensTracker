@@ -119,6 +119,22 @@ export const checkCidExists = async (cid: string): Promise<boolean> => {
   }
 };
 
+// Get Filecoin deal status for a CID
+export const getFilecoinDealStatus = async (cid: string) => {
+  try {
+    const response = await apiRequest('GET', `/api/ipfs/deal-status/${cid}`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to get deal status');
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to get Filecoin deal status', error);
+    throw new Error('Failed to get Filecoin deal status');
+  }
+};
+
 // Verify the lineage between dataset and model
 export const verifyLineage = async (
   datasetCid: string,
