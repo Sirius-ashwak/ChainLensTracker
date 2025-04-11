@@ -4,6 +4,8 @@ import {
   models, type Model, type InsertModel,
   datasetModelRelationships, type Relationship, type InsertRelationship
 } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -30,143 +32,117 @@ export interface IStorage {
   updateRelationshipStatus(id: number, status: string): Promise<Relationship | undefined>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private datasets: Map<number, Dataset>;
-  private models: Map<number, Model>;
-  private relationships: Map<number, Relationship>;
-  
-  private userCurrentId: number;
-  private datasetCurrentId: number;
-  private modelCurrentId: number;
-  private relationshipCurrentId: number;
-
-  constructor() {
-    this.users = new Map();
-    this.datasets = new Map();
-    this.models = new Map();
-    this.relationships = new Map();
-    
-    this.userCurrentId = 1;
-    this.datasetCurrentId = 1;
-    this.modelCurrentId = 1;
-    this.relationshipCurrentId = 1;
-
-    // Initialize with sample user
-    this.createUser({
-      username: "demo",
-      password: "password"
-    });
-  }
-
+export class DatabaseStorage implements IStorage {
   // User methods
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userCurrentId++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
 
   // Dataset methods
   async getDatasets(): Promise<Dataset[]> {
-    return Array.from(this.datasets.values());
+    return await db.select().from(datasets);
   }
 
   async getDataset(id: number): Promise<Dataset | undefined> {
-    return this.datasets.get(id);
+    const [dataset] = await db.select().from(datasets).where(eq(datasets.id, id));
+    return dataset;
   }
 
   async createDataset(insertDataset: InsertDataset): Promise<Dataset> {
-    const id = this.datasetCurrentId++;
-    const now = new Date();
-    const dataset: Dataset = { 
-      ...insertDataset, 
-      id, 
-      uploadedAt: now 
-    };
-    this.datasets.set(id, dataset);
+    const [dataset] = await db.insert(datasets).values(insertDataset).returning();
     return dataset;
   }
 
   async updateDatasetStatus(id: number, status: string): Promise<Dataset | undefined> {
-    const dataset = this.datasets.get(id);
-    if (dataset) {
-      const updatedDataset = { ...dataset, status };
-      this.datasets.set(id, updatedDataset);
-      return updatedDataset;
-    }
-    return undefined;
+    const [updatedDataset] = await db
+      .update(datasets)
+      .set({ status })
+      .where(eq(datasets.id, id))
+      .returning();
+    return updatedDataset;
   }
 
   // Model methods
   async getModels(): Promise<Model[]> {
-    return Array.from(this.models.values());
+    return await db.select().from(models);
   }
 
   async getModel(id: number): Promise<Model | undefined> {
-    return this.models.get(id);
+    const [model] = await db.select().from(models).where(eq(models.id, id));
+    return model;
   }
 
   async createModel(insertModel: InsertModel): Promise<Model> {
-    const id = this.modelCurrentId++;
-    const now = new Date();
-    const model: Model = { 
-      ...insertModel, 
-      id, 
-      createdAt: now 
-    };
-    this.models.set(id, model);
+    const [model] = await db.insert(models).values(insertModel).returning();
     return model;
   }
 
   // Relationship methods
   async getRelationships(): Promise<Relationship[]> {
-    return Array.from(this.relationships.values());
+    return await db.select().from(datasetModelRelationships);
   }
 
   async getRelationshipsByDataset(datasetId: number): Promise<Relationship[]> {
-    return Array.from(this.relationships.values()).filter(
-      relationship => relationship.datasetId === datasetId
-    );
+    return await db
+      .select()
+      .from(datasetModelRelationships)
+      .where(eq(datasetModelRelationships.datasetId, datasetId));
   }
 
   async getRelationshipsByModel(modelId: number): Promise<Relationship[]> {
-    return Array.from(this.relationships.values()).filter(
-      relationship => relationship.modelId === modelId
-    );
+    return await db
+      .select()
+      .from(datasetModelRelationships)
+      .where(eq(datasetModelRelationships.modelId, modelId));
   }
 
   async createRelationship(insertRelationship: InsertRelationship): Promise<Relationship> {
-    const id = this.relationshipCurrentId++;
-    const now = new Date();
-    const relationship: Relationship = {
-      ...insertRelationship,
-      id,
-      usageDate: now
-    };
-    this.relationships.set(id, relationship);
+    const [relationship] = await db
+      .insert(datasetModelRelationships)
+      .values(insertRelationship)
+      .returning();
     return relationship;
   }
 
   async updateRelationshipStatus(id: number, status: string): Promise<Relationship | undefined> {
-    const relationship = this.relationships.get(id);
-    if (relationship) {
-      const updatedRelationship = { ...relationship, status };
-      this.relationships.set(id, updatedRelationship);
-      return updatedRelationship;
-    }
-    return undefined;
+    const [updatedRelationship] = await db
+      .update(datasetModelRelationships)
+      .set({ status })
+      .where(eq(datasetModelRelationships.id, id))
+      .returning();
+    return updatedRelationship;
   }
 }
 
-export const storage = new MemStorage();
+// Create a demo user if one doesn't exist
+const initializeDatabase = async () => {
+  const demoUser = await db
+    .select()
+    .from(users)
+    .where(eq(users.username, "demo"))
+    .limit(1);
+    
+  if (demoUser.length === 0) {
+    await db.insert(users).values({
+      username: "demo",
+      password: "password"
+    });
+  }
+};
+
+// Initialize database with demo user
+initializeDatabase().catch(console.error);
+
+// Use the database storage implementation
+export const storage = new DatabaseStorage();
