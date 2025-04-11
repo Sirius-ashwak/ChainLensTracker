@@ -92,6 +92,7 @@ const Datasets = () => {
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[800px] p-0">
+                <DialogTitle className="sr-only">Upload Dataset</DialogTitle>
                 <UploadForm />
               </DialogContent>
             </Dialog>

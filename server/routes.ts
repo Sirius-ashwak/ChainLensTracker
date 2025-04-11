@@ -237,19 +237,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Map files to paths for Lighthouse
-      const filePaths = allFiles.map((file: any) => file.path);
+      // Lighthouse expects individual file paths, not an array
+      // Upload to Lighthouse - handle files one by one
+      let cid = '';
+      let fileSize = 0;
       
-      // Upload to Lighthouse
-      const response = await lighthouse.upload(
-        filePaths, 
-        apiKey,
-        undefined, // Use default deal parameters
-        req.body.name // Optional name
-      );
-      
-      // Calculate total size
-      const totalSize = allFiles.reduce((acc: number, file: any) => acc + file.size, 0);
+      for (const file of allFiles) {
+        // Calculate size
+        if (typeof file.size === 'number') {
+          fileSize += file.size;
+        }
+        
+        // Upload each file individually
+        const response = await lighthouse.upload(
+          file.path, 
+          apiKey,
+          undefined, // Use default deal parameters
+          req.body.name // Optional name
+        );
+        
+        // Use the first file's CID as the overall CID
+        if (!cid && response.data && response.data.Hash) {
+          cid = response.data.Hash;
+        }
+      }
       
       // Clean up temporary files
       allFiles.forEach((file: any) => {
@@ -262,14 +273,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      if (!response.data || !response.data.Hash) {
+      if (!cid) {
         return res.status(500).json({ message: "Failed to get CID from Lighthouse" });
       }
       
       // Return CID and size
       res.json({ 
-        cid: response.data.Hash,
-        size: formatFileSize(totalSize)
+        cid: cid,
+        size: formatFileSize(fileSize)
       });
 
     } catch (error) {
