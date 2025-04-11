@@ -3,6 +3,11 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertDatasetSchema, insertModelSchema, insertRelationshipSchema, datasetMetadataSchema } from "@shared/schema";
 import { z } from "zod";
+import lighthouse from '@lighthouse-web3/sdk';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // API routes
@@ -184,6 +189,133 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to validate metadata" });
     }
   });
+
+  // Configure multer for file uploads
+  const upload = multer({ 
+    dest: path.join(os.tmpdir(), 'uploads'),
+    limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit
+  });
+
+  // Lighthouse IPFS endpoints
+  // Upload files to IPFS via Lighthouse
+  apiRouter.post("/ipfs/upload", upload.array('files'), async (req, res) => {
+    try {
+      if (!req.files || (Array.isArray(req.files) && req.files.length === 0)) {
+        return res.status(400).json({ message: "No files uploaded" });
+      }
+
+      const apiKey = process.env.LIGHTHOUSE_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ message: "Lighthouse API key not configured" });
+      }
+
+      // Create metadata file if metadata is provided
+      let allFiles = Array.isArray(req.files) ? [...req.files] : [req.files];
+      
+      if (req.body.metadata) {
+        let metadata;
+        try {
+          metadata = JSON.parse(req.body.metadata);
+          // Create a metadata file
+          const metadataPath = path.join(os.tmpdir(), 'metadata.json');
+          fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+          
+          allFiles.push({
+            path: metadataPath,
+            originalname: 'metadata.json',
+            mimetype: 'application/json'
+          });
+        } catch (err) {
+          return res.status(400).json({ message: "Invalid metadata JSON" });
+        }
+      }
+
+      // Map files to paths for Lighthouse
+      const filePaths = allFiles.map((file: any) => file.path);
+      
+      // Upload to Lighthouse
+      const response = await lighthouse.upload(
+        filePaths, 
+        apiKey,
+        undefined, // Use default deal parameters
+        req.body.name // Optional name
+      );
+      
+      // Calculate total size
+      const totalSize = allFiles.reduce((acc: number, file: any) => acc + file.size, 0);
+      
+      // Clean up temporary files
+      allFiles.forEach((file: any) => {
+        try {
+          if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+          }
+        } catch (err) {
+          console.error('Error deleting temp file:', err);
+        }
+      });
+
+      if (!response.data || !response.data.Hash) {
+        return res.status(500).json({ message: "Failed to get CID from Lighthouse" });
+      }
+      
+      // Return CID and size
+      res.json({ 
+        cid: response.data.Hash,
+        size: formatFileSize(totalSize)
+      });
+
+    } catch (error) {
+      console.error('Failed to upload to Lighthouse', error);
+      res.status(500).json({ message: "Failed to upload to IPFS/Filecoin" });
+    }
+  });
+
+  // Get uploads from Lighthouse
+  apiRouter.get("/ipfs/uploads", async (req, res) => {
+    try {
+      const apiKey = process.env.LIGHTHOUSE_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ message: "Lighthouse API key not configured" });
+      }
+
+      const response = await lighthouse.getUploads(apiKey);
+      res.json(response.data);
+    } catch (error) {
+      console.error('Failed to get uploads from Lighthouse', error);
+      res.status(500).json({ message: "Failed to retrieve uploads from IPFS/Filecoin" });
+    }
+  });
+
+  // Check if a CID exists in Lighthouse
+  apiRouter.get("/ipfs/check/:cid", async (req, res) => {
+    try {
+      const { cid } = req.params;
+      const apiKey = process.env.LIGHTHOUSE_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ message: "Lighthouse API key not configured" });
+      }
+
+      const response = await lighthouse.getUploads(apiKey);
+      const exists = response.data.fileList.some((file: any) => file.cid === cid);
+      
+      res.json({ exists });
+    } catch (error) {
+      console.error('Failed to check CID in Lighthouse', error);
+      res.status(500).json({ message: "Failed to check if CID exists in IPFS/Filecoin" });
+    }
+  });
+
+  // Format file size helper
+  function formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
 
   // Mount all routes under /api
   app.use("/api", apiRouter);

@@ -1,13 +1,13 @@
-import { Web3Storage } from 'web3.storage';
+import lighthouse from '@lighthouse-web3/sdk';
 import { type DatasetMetadata } from '@shared/schema';
 
-// Initialize Web3Storage client
-const getWeb3StorageClient = () => {
-  const token = process.env.WEB3STORAGE_TOKEN || import.meta.env.VITE_WEB3STORAGE_TOKEN;
-  if (!token) {
-    throw new Error('Web3Storage token is required');
+// Get Lighthouse API key
+const getLighthouseApiKey = (): string => {
+  const apiKey = import.meta.env.VITE_LIGHTHOUSE_API_KEY;
+  if (!apiKey) {
+    throw new Error('Lighthouse API key is required');
   }
-  return new Web3Storage({ token });
+  return apiKey;
 };
 
 // Convert a File to a blob
@@ -23,13 +23,13 @@ const createMetadataFile = (metadata: DatasetMetadata): File => {
   return new File([metadataBlob], 'metadata.json');
 };
 
-// Upload dataset files to Web3Storage
+// Upload dataset files to Lighthouse (Filecoin/IPFS)
 export const uploadDataset = async (
   files: File[],
   metadata: DatasetMetadata
 ): Promise<{ cid: string; size: string }> => {
   try {
-    const client = getWeb3StorageClient();
+    const apiKey = getLighthouseApiKey();
     
     // Add metadata file
     const metadataFile = createMetadataFile(metadata);
@@ -39,34 +39,45 @@ export const uploadDataset = async (
     const totalSize = allFiles.reduce((acc, file) => acc + file.size, 0);
     const formattedSize = formatFileSize(totalSize);
     
-    // Upload files
-    const cid = await client.put(allFiles, {
-      name: metadata.name,
-      wrapWithDirectory: true,
-    });
+    // Upload files to Lighthouse
+    const uploadResponse = await lighthouse.upload(
+      allFiles, 
+      apiKey, 
+      false, // If false, uses IPFS, if true - tries to make Filecoin deal
+      metadata.name // Optional name
+    );
     
-    return { cid, size: formattedSize };
+    if (!uploadResponse.data || !uploadResponse.data.Hash) {
+      throw new Error('Failed to get CID from Lighthouse');
+    }
+    
+    return { cid: uploadResponse.data.Hash, size: formattedSize };
   } catch (error) {
-    console.error('Failed to upload to Web3Storage', error);
+    console.error('Failed to upload to Lighthouse', error);
     throw new Error('Failed to upload dataset to Filecoin/IPFS');
   }
 };
 
-// Retrieve a dataset from Web3Storage by CID
+// Retrieve a dataset from Lighthouse by CID
 export const retrieveDataset = async (cid: string): Promise<any> => {
   try {
-    const client = getWeb3StorageClient();
-    const res = await client.get(cid);
+    // Get file download links
+    const apiKey = getLighthouseApiKey();
+    const fileInfoResponse = await lighthouse.getUploads(apiKey);
     
-    if (!res || !res.ok) {
-      throw new Error('Failed to retrieve dataset');
+    // Find the files with matching CID
+    const matchingFiles = fileInfoResponse.data.uploads.filter(
+      (file: any) => file.cid === cid
+    );
+    
+    if (!matchingFiles || matchingFiles.length === 0) {
+      throw new Error('No files found with the specified CID');
     }
     
-    // Get all files from the response
-    const files = await res.files();
-    return files;
+    // Return file information
+    return matchingFiles;
   } catch (error) {
-    console.error('Failed to retrieve from Web3Storage', error);
+    console.error('Failed to retrieve from Lighthouse', error);
     throw new Error('Failed to retrieve dataset from Filecoin/IPFS');
   }
 };
@@ -82,12 +93,14 @@ export const formatFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
-// Helper to check if cid exists
+// Helper to check if cid exists on Lighthouse
 export const checkCidExists = async (cid: string): Promise<boolean> => {
   try {
-    const client = getWeb3StorageClient();
-    const status = await client.status(cid);
-    return !!status;
+    const apiKey = getLighthouseApiKey();
+    const fileInfoResponse = await lighthouse.getUploads(apiKey);
+    
+    // Check if any file has the matching CID
+    return fileInfoResponse.data.uploads.some((file: any) => file.cid === cid);
   } catch {
     return false;
   }
@@ -100,8 +113,6 @@ export const verifyLineage = async (
   modelCid: string
 ): Promise<boolean> => {
   try {
-    const client = getWeb3StorageClient();
-    
     // Check if all CIDs exist
     const datasetExists = await checkCidExists(datasetCid);
     const modelExists = await checkCidExists(modelCid);
