@@ -220,11 +220,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const metadataPath = path.join(os.tmpdir(), 'metadata.json');
           fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
           
+          // Add metadata file (with required multer fields)
           allFiles.push({
             path: metadataPath,
             originalname: 'metadata.json',
-            mimetype: 'application/json'
-          });
+            mimetype: 'application/json',
+            fieldname: 'files',
+            encoding: '7bit',
+            size: fs.statSync(metadataPath).size,
+            destination: os.tmpdir(),
+            filename: 'metadata.json',
+            buffer: Buffer.from(JSON.stringify(metadata, null, 2))
+          } as any);
         } catch (err) {
           return res.status(400).json({ message: "Invalid metadata JSON" });
         }

@@ -9,22 +9,23 @@ import DatasetLineage from "@/components/DatasetLineage";
 import UploadForm from "@/components/UploadForm";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { type Dataset, type Model, type Relationship } from "@shared/schema";
 
 const Dashboard = () => {
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
 
   // Fetch datasets
-  const { data: datasets, isLoading: datasetsLoading } = useQuery({
+  const { data: datasets = [], isLoading: datasetsLoading } = useQuery<Dataset[]>({
     queryKey: ["/api/datasets"],
   });
 
   // Fetch models
-  const { data: models, isLoading: modelsLoading } = useQuery({
+  const { data: models = [], isLoading: modelsLoading } = useQuery<Model[]>({
     queryKey: ["/api/models"],
   });
 
   // Fetch relationships
-  const { data: relationships, isLoading: relationshipsLoading } = useQuery({
+  const { data: relationships = [], isLoading: relationshipsLoading } = useQuery<Relationship[]>({
     queryKey: ["/api/relationships"],
   });
 

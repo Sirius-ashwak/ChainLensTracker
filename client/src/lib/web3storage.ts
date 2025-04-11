@@ -1,14 +1,16 @@
-import lighthouse from '@lighthouse-web3/sdk';
 import { type DatasetMetadata } from '@shared/schema';
+import { apiRequest } from './queryClient';
 
-// Get Lighthouse API key
-const getLighthouseApiKey = (): string => {
-  const apiKey = import.meta.env.VITE_LIGHTHOUSE_API_KEY;
-  if (!apiKey) {
-    throw new Error('Lighthouse API key is required');
-  }
-  return apiKey;
-};
+// Interface for Lighthouse file object
+interface LighthouseFile {
+  cid: string;
+  fileName: string;
+  fileSizeInBytes: number;
+  createdAt: string;
+  lastViewedAt: string;
+  mimeType: string;
+  status: string;
+}
 
 // Convert a File to a blob
 const fileToBlob = async (file: File): Promise<Blob> => {
@@ -23,58 +25,66 @@ const createMetadataFile = (metadata: DatasetMetadata): File => {
   return new File([metadataBlob], 'metadata.json');
 };
 
-// Upload dataset files to Lighthouse (Filecoin/IPFS)
+// Upload dataset files to Lighthouse (Filecoin/IPFS) through our backend API
 export const uploadDataset = async (
   files: File[],
   metadata: DatasetMetadata
 ): Promise<{ cid: string; size: string }> => {
   try {
-    const apiKey = getLighthouseApiKey();
-    
     // Add metadata file
     const metadataFile = createMetadataFile(metadata);
     const allFiles = [...files, metadataFile];
     
-    // Calculate total size
-    const totalSize = allFiles.reduce((acc, file) => acc + file.size, 0);
-    const formattedSize = formatFileSize(totalSize);
+    // Create form data for file upload
+    const formData = new FormData();
+    allFiles.forEach(file => {
+      formData.append('files', file);
+    });
     
-    // Upload files to Lighthouse
-    const uploadResponse = await lighthouse.upload(
-      allFiles, 
-      apiKey, 
-      false, // If false, uses IPFS, if true - tries to make Filecoin deal
-      metadata.name // Optional name
-    );
+    // Add metadata and name to form data
+    formData.append('metadata', JSON.stringify(metadata));
+    formData.append('name', metadata.name);
     
-    if (!uploadResponse.data || !uploadResponse.data.Hash) {
-      throw new Error('Failed to get CID from Lighthouse');
+    // Upload files through our server API
+    const response = await fetch('/api/ipfs/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to upload to Lighthouse');
     }
     
-    return { cid: uploadResponse.data.Hash, size: formattedSize };
+    const data = await response.json();
+    return { cid: data.cid, size: data.size };
   } catch (error) {
     console.error('Failed to upload to Lighthouse', error);
     throw new Error('Failed to upload dataset to Filecoin/IPFS');
   }
 };
 
-// Retrieve a dataset from Lighthouse by CID
-export const retrieveDataset = async (cid: string): Promise<any> => {
+// Retrieve a dataset from Lighthouse by CID through our backend API
+export const retrieveDataset = async (cid: string): Promise<LighthouseFile[]> => {
   try {
-    // Get file download links
-    const apiKey = getLighthouseApiKey();
-    const fileInfoResponse = await lighthouse.getUploads(apiKey);
+    // First check all uploads
+    const uploadsResponse = await apiRequest('GET', '/api/ipfs/uploads');
     
-    // Find the files with matching CID
-    const matchingFiles = fileInfoResponse.data.uploads.filter(
-      (file: any) => file.cid === cid
+    if (!uploadsResponse.ok) {
+      throw new Error('Failed to retrieve uploads');
+    }
+    
+    const uploads = await uploadsResponse.json();
+    
+    // Find files with matching CID
+    const matchingFiles = uploads.fileList.filter(
+      (file: LighthouseFile) => file.cid === cid
     );
     
     if (!matchingFiles || matchingFiles.length === 0) {
       throw new Error('No files found with the specified CID');
     }
     
-    // Return file information
     return matchingFiles;
   } catch (error) {
     console.error('Failed to retrieve from Lighthouse', error);
@@ -93,14 +103,17 @@ export const formatFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
-// Helper to check if cid exists on Lighthouse
+// Helper to check if cid exists on Lighthouse through our backend API
 export const checkCidExists = async (cid: string): Promise<boolean> => {
   try {
-    const apiKey = getLighthouseApiKey();
-    const fileInfoResponse = await lighthouse.getUploads(apiKey);
+    const response = await apiRequest('GET', `/api/ipfs/check/${cid}`);
     
-    // Check if any file has the matching CID
-    return fileInfoResponse.data.uploads.some((file: any) => file.cid === cid);
+    if (!response.ok) {
+      return false;
+    }
+    
+    const data = await response.json();
+    return data.exists;
   } catch {
     return false;
   }
