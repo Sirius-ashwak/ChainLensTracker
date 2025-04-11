@@ -30,12 +30,12 @@ const Dashboard = () => {
   });
 
   const formatStorageUsed = () => {
-    if (!datasets || datasets.length === 0) return "0 GB";
+    if (datasets.length === 0) return "0 GB";
     
     // This is a simplified calculation - in a real app you'd need to get actual storage used
     let totalSize = 0;
-    datasets.forEach(dataset => {
-      const match = dataset.size.match(/(\d+\.?\d*)\s*(\w+)/);
+    datasets.forEach((dataset: Dataset) => {
+      const match = dataset.size?.match(/(\d+\.?\d*)\s*(\w+)/);
       if (match) {
         const [, size, unit] = match;
         const value = parseFloat(size);
@@ -49,9 +49,9 @@ const Dashboard = () => {
   };
 
   // Calculate stats
-  const totalDatasets = datasets?.length || 0;
-  const linkedModels = models?.length || 0;
-  const verifiedLineages = relationships?.filter(r => r.status === "verified").length || 0;
+  const totalDatasets = datasets.length;
+  const linkedModels = models.length;
+  const verifiedLineages = relationships.filter((r: Relationship) => r.status === "verified").length || 0;
   const storageUsed = formatStorageUsed();
 
   return (

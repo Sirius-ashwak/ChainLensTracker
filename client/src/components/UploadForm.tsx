@@ -58,7 +58,7 @@ const UploadForm = () => {
         throw new Error("Please select files to upload");
       }
 
-      // Upload files to Web3.storage
+      // Upload files to Lighthouse via our server API
       const { cid, size } = await uploadDataset(files, { ...data, tags });
 
       // Create dataset in the backend
@@ -91,7 +91,7 @@ const UploadForm = () => {
       
       toast({
         title: "Dataset uploaded successfully",
-        description: "Your dataset is now being processed on Filecoin/IPFS",
+        description: "Your dataset is now being processed on Filecoin/IPFS via Lighthouse",
         variant: "default",
       });
     },
@@ -437,7 +437,7 @@ const UploadForm = () => {
                 ) : (
                   <>
                     <Upload className="h-4 w-4" />
-                    <span>Upload to Filecoin</span>
+                    <span>Upload via Lighthouse</span>
                   </>
                 )}
               </Button>
